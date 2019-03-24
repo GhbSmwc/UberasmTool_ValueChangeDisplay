@@ -17,7 +17,7 @@ incsrc "../ChangeInValueDisplayDefines/Defines.asm"
 ;it would be on "index 1"'s column ($xx).
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;                           Index:      0    1    2    3
-TempNumbDisplayByte_StatusBarPos0: db $00, $76, $00, $36
+TempNumbDisplayByte_StatusBarPos0: db $00, $36, $00, $36
 TempNumbDisplayByte_StatusBarPos1: db $A0, $A0, $A1, $A1
 TempNumbDisplayByte_StatusBarPos2: db $7F, $7F, $7F, $7F
 
@@ -49,6 +49,19 @@ BriefNumberDisplay:
 	
 	JSL ConvertToDigits
 	
+	.RemoveLeadingZeroes
+	LDY #$00
+	
+	..Loop
+	LDA !HexDecDigitTable|!dp,y	;\if current digit non-zero, don't omit trailing zeros
+	BNE .NonZero			;/
+	LDA #$FC			;\blank tile to replace leading zero
+	STA !HexDecDigitTable|!dp,y	;/
+	INY				;>next digit
+	CPY #$04			;>last digit to check (tens place). So that it can display a single 0.
+	BCC ..Loop			;>if not done yet, continue looping.
+	
+	.NonZero
 	.StatusBarWrite
 	
 	LDA TempNumbDisplayByte_MaxDigits,x		;\$00 contains the number of digits -1 to write
@@ -158,7 +171,7 @@ BriefNumberDisplay:
 		RTL
 	endif
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-;
+;Clear digits
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 	ClearBriefNumberDisplay:
 	LDX.b #(!Setting_ChangeDisplay_TableSlots-1)
