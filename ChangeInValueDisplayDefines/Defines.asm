@@ -1,17 +1,31 @@
+;Size of table:
+ !Setting_ChangeDisplay_TableSlots = 4
+ ;^Number of slots (which is how many number displays).
+
 ;Freeram addresses
  if !sa1 == 0
-  !Freeram_NumberDisplay = $60
+  !Freeram_NumberDisplayLowByte = $7FAD49
  else
-  !Freeram_NumberDisplay = $60
+  !Freeram_NumberDisplayLowByte = $4001B9
  endif
-  ;^[2 bytes] Number to display.
+  ;^[BytesUsed = !Setting_ChangeDisplay_TableSlots]
+  ;Number to display (low byte).
   
  if !sa1 == 0
-  !Freeram_DisplayTimer = $62
+  !Freeram_NumberDisplayHighByte = $7FAD4D
  else
-  !Freeram_DisplayTimer = $62
+  !Freeram_NumberDisplayHighByte = $4001BB
  endif
-  ;^[1 byte] Timer (in frames) for the duration of the number to stay before disappearing.
+  ;^[BytesUsed = !Setting_ChangeDisplay_TableSlots]
+  ;Number to display (high byte).
+  
+ if !sa1 == 0
+  !Freeram_DisplayTimer = $7FAD51
+ else
+  !Freeram_DisplayTimer = $4001BF
+ endif
+  ;^[BytesUsed = !Setting_ChangeDisplay_TableSlots]
+  ; Timer (in frames) for the duration of the number to stay before disappearing.
 
 ;Status bar stuff
  !StatusBarFormat                     = $02
@@ -24,8 +38,21 @@
  !Setting_StatusBar_DisplayPos = $7FA000
   ;^position to write the numbers as well as clearing the tiles a while later.
 
+;Other settings:
+ !ClearTile = $FC
+  ;^Blank tile when the numbers disappear.
+  ; Some tile examples:
+  ; $FC = blank tile
+  ; $27 = "-"
 ;Don't touch
  !HexDecDigitTable = $02
  if !sa1 != 0
   !HexDecDigitTable = $04
  endif
+
+;Display memory range:
+ print "-----------------------------------------------------------------------------------------------"
+ print "Freeram_NumberDisplayLowByte: $", hex(!Freeram_NumberDisplayLowByte), " to $", hex(!Freeram_NumberDisplayLowByte+(!Setting_ChangeDisplay_TableSlots-1))
+ print "Freeram_NumberDisplayHighByte: $", hex(!Freeram_NumberDisplayHighByte), " to $", hex(!Freeram_NumberDisplayHighByte+(!Setting_ChangeDisplay_TableSlots-1))
+ print "Freeram_DisplayTimer: $", hex(!Freeram_DisplayTimer), " to $", hex(!Freeram_DisplayTimer+(!Setting_ChangeDisplay_TableSlots-1))
+ print "-----------------------------------------------------------------------------------------------"

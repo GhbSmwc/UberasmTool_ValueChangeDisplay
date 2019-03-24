@@ -1,42 +1,86 @@
 incsrc "../ChangeInValueDisplayDefines/Defines.asm"
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;Status bar write table
+;Each slot is assigned to a given status bar position.
+;
+;Memory layout usage:
+; -Each byte of the 24-bit (3-byte) address is split
+;  into each table, as to accommodate the indexing,
+;  for example: slot 0 contains a status bar position
+;  of $7FA000, when stored in the table it should be:
+;                 Index:                   0    1    2    3
+;  TempNumbDisplayByte_StatusBarPos0: db $00, $xx, $yy, $zz ;$ 7F  A0 [00]
+;  TempNumbDisplayByte_StatusBarPos1: db $A0, $xx, $yy, $zz ;$ 7F [A0] 00
+;  TempNumbDisplayByte_StatusBarPos2: db $7F, $xx, $yy, $zz ;$[7F] A0  00
+;
+;And if you want to edit the next slot status bar position,
+;it would be on "index 1"'s column ($xx).
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;                           Index:      0    1    2    3
+TempNumbDisplayByte_StatusBarPos0: db $00, $76, $00, $36
+TempNumbDisplayByte_StatusBarPos1: db $A0, $A0, $A1, $A1
+TempNumbDisplayByte_StatusBarPos2: db $7F, $7F, $7F, $7F
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;Max digits table.
+;This is the maximum number of digits, minus 1 for
+;each slot. (so put a 2 if you want a 3-digit number).
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;                       Index:      0    1    2    3
+TempNumbDisplayByte_MaxDigits: db $03, $04, $04, $04
+
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;Input:
 ; $00-$01: The number to display, will add each time this is executed.
-;
+; X = what index to modify.
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 BriefNumberDisplay:
-	REP #$20			;\Show running total
-	LDA !Freeram_NumberDisplay	;|
-	CLC				;|
-	ADC $00				;|
-	STA !Freeram_NumberDisplay	;|
-	STA $00				;|
-	SEP #$20			;/
-	LDA.b #60			;\Set timer of display
-	STA !Freeram_DisplayTimer	;/
+	LDA !Freeram_NumberDisplayLowByte,x	;\Running total
+	CLC					;|
+	ADC $00					;|
+	STA !Freeram_NumberDisplayLowByte,x	;|
+	STA $00					;|
+	LDA !Freeram_NumberDisplayHighByte,x	;|
+	ADC $01					;|
+	STA !Freeram_NumberDisplayHighByte,x	;|
+	STA $01					;/
+	LDA.b #60				;\Set timer of display
+	STA !Freeram_DisplayTimer,x		;/
 	
 	JSL ConvertToDigits
 	
-	if !StatusBarFormat == $01
-		LDX.b #4
-		-
-		LDA !HexDecDigitTable,x
-		STA !Setting_StatusBar_DisplayPos,x
-		DEX
-		BPL -
-	else
-		LDX.b #4
-		LDY.b #8
-		-
-		LDA !HexDecDigitTable,x
-		PHX
-		TYX
-		STA !Setting_StatusBar_DisplayPos,x
-		PLX
-		DEX
-		DEY #2
-		BPL -
+	.StatusBarWrite
+	
+	LDA TempNumbDisplayByte_MaxDigits,x		;\$00 contains the number of digits -1 to write
+	STA $00						;/
+	if !StatusBarFormat == $02
+		ASL						;\Status bar addressing
 	endif
+	TAY						;/
+	LDA TempNumbDisplayByte_StatusBarPos0,x		;\$08-$0A contains an address of the status bar to write.
+	STA $08						;|
+	LDA TempNumbDisplayByte_StatusBarPos1,x		;|
+	STA $09						;|
+	LDA TempNumbDisplayByte_StatusBarPos2,x		;|
+	STA $0A						;/
+	
+	PHX
+	LDX #$04
+	.Loop
+	;$00 = how many digits to write.
+	;X = what digit
+	;Y = what status bar address
+	LDA !HexDecDigitTable,x
+	STA [$08],Y
+	
+	..Next
+	DEX						;>Next digit
+	DEY #!StatusBarFormat				;>Next tile on status bar
+	LDA $00						;\Number of digits to write
+	DEC A						;|
+	STA $00						;/
+	BPL .Loop					;>If all digits written, break loop
+	PLX
 	RTL
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;16-bit hex to 4 (or 5)-digit decimal subroutine
@@ -117,21 +161,49 @@ BriefNumberDisplay:
 ;
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 	ClearBriefNumberDisplay:
-	LDA !Freeram_DisplayTimer		;\Decrement by 1 each frame until 0
-	BEQ +					;|
-	DEC A					;/
-	STA !Freeram_DisplayTimer		
-	BNE +					;>If decrements from 1 to 0, clear status bar.
+	LDX.b #(!Setting_ChangeDisplay_TableSlots-1)
 	
+	.Loop
+	LDA !Freeram_DisplayTimer,x		;\Decrement by 1 each frame until 0
+	BEQ ..Next				;|
+	DEC A					;|
+	STA !Freeram_DisplayTimer,x		;/
+	BNE ..Next				;>If decrements from 1 to 0, clear status bar.
+	
+	..ClearNumber
+	LDA TempNumbDisplayByte_MaxDigits,x	;\Tell when to stop writing blank tiles.
+	STA $00					;/
+	if !StatusBarFormat == $02
+		ASL
+	endif
+	TAY					;/
+	
+	LDA TempNumbDisplayByte_StatusBarPos0,x		;\$01-$03 contains an address of the status bar to write.
+	STA $01						;|
+	LDA TempNumbDisplayByte_StatusBarPos1,x		;|
+	STA $02						;|
+	LDA TempNumbDisplayByte_StatusBarPos2,x		;|
+	STA $03						;/
+	
+	...Loop
+	;$00 number of digits to clear (within the max number of digits)
+	;Y = what tile to clear
 	LDA #$FC
-	LDX.b #(4)*!StatusBarFormat
-	-
-	STA !Setting_StatusBar_DisplayPos,x
-	DEX #!StatusBarFormat
-	BPL -
+	STA [$01],y
 	
+	....NextTile
+	DEY #!StatusBarFormat
+	LDA $00					;\Number of digits left to clear.
+	DEC A					;|
+	STA $00					;/
+	BPL ...Loop
+	
+	...Done
 	LDA #$00
-	STA !Freeram_NumberDisplay
-	STA !Freeram_NumberDisplay+1
-	+
+	STA !Freeram_NumberDisplayLowByte,x
+	STA !Freeram_NumberDisplayHighByte,x
+	
+	..Next
+	DEX
+	BPL .Loop
 	RTL
